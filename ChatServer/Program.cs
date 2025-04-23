@@ -41,7 +41,7 @@ namespace ChatServer
                         string message = GetMessage();
                         if (string.IsNullOrEmpty(message)) continue;
 
-                        Console.WriteLine($"{Username}: {message}");
+                        Console.WriteLine($"[{DateTime.Now}]{Username}: {message}");
                         _server.BroadcastMessage($"{Username}: {message}", Id);
                     }
                     catch
