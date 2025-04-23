@@ -7,45 +7,56 @@ using System.Threading;
 
 namespace ChatServer
 {
+    // Класс, представляющий клиента, подключенного к серверу
     public class ClientObject
     {
-        public string Id { get; } = Guid.NewGuid().ToString();
-        public string Username { get; set; }
-        public TcpClient Client { get; }
-        public NetworkStream Stream { get; private set; }
-        private readonly ServerObject _server;
+        public string Id { get; } = Guid.NewGuid().ToString(); // Уникальный идентификатор клиента
+        public string Username { get; set; } // Имя пользователя
+        public TcpClient Client { get; } // TCP-клиент
+        public NetworkStream Stream { get; private set; } // Сетевой поток для обмена данными
+        private readonly ServerObject _server; // Ссылка на сервер
 
+        // Конструктор
         public ClientObject(TcpClient tcpClient, ServerObject serverObject)
         {
             Client = tcpClient;
             _server = serverObject;
         }
 
+        // Основной метод обработки клиента
         public void Process()
         {
             try
             {
-                Stream = Client.GetStream();
+                Stream = Client.GetStream(); // Получаем сетевой поток
 
+                // Получаем имя пользователя
                 string username = GetMessage();
                 Username = username;
 
                 Console.WriteLine($"{Username} вошел в чат");
 
+                // Рассылаем обновленный список пользователей
                 _server.BroadcastUserList();
 
+                // Основной цикл обработки сообщений
                 while (true)
                 {
                     try
                     {
+                        // Получаем сообщение от клиента
                         string message = GetMessage();
                         if (string.IsNullOrEmpty(message)) continue;
 
+                        // Логируем сообщение с временной меткой
                         Console.WriteLine($"[{DateTime.Now}]{Username}: {message}");
+
+                        // Рассылаем сообщение всем клиентам, кроме отправителя
                         _server.BroadcastMessage($"{Username}: {message}", Id);
                     }
                     catch
                     {
+                        // Обработка отключения клиента
                         Console.WriteLine($"{Username} покинул чат");
                         _server.RemoveConnection(Id);
                         _server.BroadcastUserList();
@@ -59,44 +70,51 @@ namespace ChatServer
             }
             finally
             {
+                // Гарантированное освобождение ресурсов
                 _server.RemoveConnection(Id);
                 Stream?.Close();
                 Client?.Close();
             }
         }
 
+        // Метод для получения сообщения из потока
         private string GetMessage()
         {
-            byte[] data = new byte[256];
+            byte[] data = new byte[256]; // Буфер для данных
             StringBuilder builder = new StringBuilder();
             int bytes;
             do
             {
+                // Чтение данных из потока
                 bytes = Stream.Read(data, 0, data.Length);
                 builder.Append(Encoding.UTF8.GetString(data, 0, bytes));
-            } while (Stream.DataAvailable);
+            } while (Stream.DataAvailable); // Пока есть данные
 
             return builder.ToString();
         }
     }
 
+    // Класс, представляющий сервер чата
     public class ServerObject
     {
-        private TcpListener _tcpListener;
-        private readonly Dictionary<string, ClientObject> _clients = new Dictionary<string, ClientObject>();
-        private int _port;
+        private TcpListener _tcpListener; // Слушатель подключений
+        private readonly Dictionary<string, ClientObject> _clients = new Dictionary<string, ClientObject>(); // Список клиентов
+        private int _port; // Порт сервера
 
+        // Конструктор
         public ServerObject(int port)
         {
             _port = port;
-            _tcpListener = new TcpListener(IPAddress.Any, _port);
+            _tcpListener = new TcpListener(IPAddress.Any, _port); // Слушаем все IP-адреса
         }
 
+        // Добавление нового клиента
         public void AddConnection(ClientObject clientObject)
         {
             _clients.Add(clientObject.Id, clientObject);
         }
 
+        // Удаление клиента
         public void RemoveConnection(string id)
         {
             if (_clients.TryGetValue(id, out ClientObject client))
@@ -106,6 +124,7 @@ namespace ChatServer
             }
         }
 
+        // Получение списка имен пользователей
         public List<string> GetUserList()
         {
             var userList = new List<string>();
@@ -116,18 +135,20 @@ namespace ChatServer
             return userList;
         }
 
+        // Рассылка сообщения всем клиентам, кроме указанного
         public void BroadcastMessage(string message, string id)
         {
             byte[] data = Encoding.UTF8.GetBytes(message);
             foreach (var client in _clients.Values)
             {
-                if (client.Id != id)
+                if (client.Id != id) // Не отправляем отправителю
                 {
                     client.Stream.Write(data, 0, data.Length);
                 }
             }
         }
 
+        // Рассылка обновленного списка пользователей
         public void BroadcastUserList()
         {
             var userList = GetUserList();
@@ -140,6 +161,7 @@ namespace ChatServer
             }
         }
 
+        // Основной метод прослушивания подключений
         public void Listen()
         {
             try
@@ -147,13 +169,16 @@ namespace ChatServer
                 _tcpListener.Start();
                 Console.WriteLine($"Сервер запущен на порту {_port}. Ожидание подключений...");
 
+                // Бесконечный цикл принятия подключений
                 while (true)
                 {
-                    TcpClient tcpClient = _tcpListener.AcceptTcpClient();
+                    TcpClient tcpClient = _tcpListener.AcceptTcpClient(); // Принимаем клиента
 
+                    // Создаем объект клиента
                     ClientObject clientObject = new ClientObject(tcpClient, this);
                     AddConnection(clientObject);
 
+                    // Запускаем обработку клиента в отдельном потоке
                     Thread clientThread = new Thread(clientObject.Process);
                     clientThread.Start();
                 }
@@ -165,6 +190,7 @@ namespace ChatServer
             }
         }
 
+        // Отключение всех клиентов и остановка сервера
         public void Disconnect()
         {
             foreach (var client in _clients.Values)
@@ -184,6 +210,7 @@ namespace ChatServer
             string portInput = Console.ReadLine();
             int port = string.IsNullOrEmpty(portInput) ? 8888 : int.Parse(portInput);
 
+            // Создаем и запускаем сервер
             ServerObject server = new ServerObject(port);
             try
             {
